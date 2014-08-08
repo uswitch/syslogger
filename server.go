@@ -13,18 +13,18 @@ import (
 )
 
 var (
-	port      = flag.Int("port", 514, "port on which to listen")
-	debug     = flag.Bool("debug", false, "print all messages to stdout")
-	publish   = flag.Bool("publish", false, "publish messages to kafka")
-	topic     = flag.String("topic", "syslog", "kafka topic to publish on")
-	zkstring  = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
+	port     = flag.Int("port", 514, "port on which to listen")
+	debug    = flag.Bool("debug", false, "print all messages to stdout")
+	publish  = flag.Bool("publish", false, "publish messages to kafka")
+	topic    = flag.String("topic", "syslog", "kafka topic to publish on")
+	zkstring = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
 )
 
 type config struct {
-	port    int
-	debug   bool
-	publish bool
-	topic   string
+	port     int
+	debug    bool
+	publish  bool
+	topic    string
 	zkstring string
 }
 
@@ -161,10 +161,10 @@ func main() {
 	flag.Parse()
 
 	config := &config{
-		port:    *port,
-		debug:   *debug,
-		publish: *publish,
-		topic:   *topic,
+		port:     *port,
+		debug:    *debug,
+		publish:  *publish,
+		topic:    *topic,
 		zkstring: *zkstring,
 	}
 
