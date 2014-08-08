@@ -10,29 +10,37 @@ import (
 	"os/signal"
 )
 
+var (
+	port  = flag.Int("port", 514, "port on which to listen")
+	debug = flag.Bool("debug", false, "print all messages to stdout")
+)
+
 type server struct {
 	port        int
+	debug       bool
 	connections []net.Conn
 }
 
-func process(line []byte) {
+func (s *server) process(line []byte) {
 	p := rfc3164.NewParser(line)
 	if err := p.Parse(); err != nil {
 		fmt.Fprintln(os.Stderr, "failed to parse:", err)
 		return
 	}
 
-	for k, v := range p.Dump() {
-		fmt.Println(k, ":", v)
+	if s.debug {
+		for k, v := range p.Dump() {
+			fmt.Println(k, ":", v)
+		}
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func (s *server) handleConnection(conn net.Conn) {
 
 	fmt.Fprintln(os.Stderr, "got connection from:", conn.RemoteAddr())
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
-		process([]byte(scanner.Text()))
+		s.process([]byte(scanner.Text()))
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -58,14 +66,14 @@ func (s *server) handleInterrupt() {
 	}()
 }
 
-var (
-	port = flag.Int("port", 514, "port on which to listen")
-)
-
 func (s *server) start() error {
 	s.handleInterrupt()
 
 	fmt.Fprintf(os.Stderr, "starting to listen on %d\n", s.port)
+	if s.debug {
+		fmt.Fprintln(os.Stderr, "debug is enabled, all messages will be printed to stderr")
+	}
+
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {
 		return err
@@ -78,7 +86,7 @@ func (s *server) start() error {
 			continue
 		}
 		s.connections = append(s.connections, conn)
-		go handleConnection(conn)
+		go s.handleConnection(conn)
 	}
 }
 
@@ -87,6 +95,7 @@ func main() {
 
 	server := &server{
 		port:        *port,
+		debug:       *debug,
 		connections: []net.Conn{},
 	}
 
