@@ -49,26 +49,26 @@ func (s *server) handleConnection(conn net.Conn) {
 
 }
 
-func (s *server) handleInterrupt() {
+func (s *server) stop() {
+	for _, conn := range s.connections {
+		fmt.Fprintln(os.Stderr, "closing connection to", conn.RemoteAddr())
+		conn.Close()
+	}
+}
+
+func handleInterrupt(s *server) {
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 
 	go func() {
 		<-interrupts
 		fmt.Fprintln(os.Stderr, "got interrupt signal, closing", len(s.connections), "connections")
-
-		for _, conn := range s.connections {
-			fmt.Fprintln(os.Stderr, "closing connection to", conn.RemoteAddr())
-			conn.Close()
-		}
-
+		s.stop()
 		os.Exit(0)
 	}()
 }
 
 func (s *server) start() error {
-	s.handleInterrupt()
-
 	fmt.Fprintf(os.Stderr, "starting to listen on %d\n", s.port)
 	if s.debug {
 		fmt.Fprintln(os.Stderr, "debug is enabled, all messages will be printed to stderr")
@@ -98,6 +98,8 @@ func main() {
 		debug:       *debug,
 		connections: []net.Conn{},
 	}
+
+	handleInterrupt(server)
 
 	if err := server.start(); err != nil {
 		fmt.Fprintln(os.Stderr, "failed to listen:", err)
