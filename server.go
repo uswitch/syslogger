@@ -6,16 +6,16 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	rfc3164 "github.com/jeromer/syslogparser/rfc3164"
+	"log"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
-	"log"
 )
 
 var (
 	port     = flag.Int("port", 514, "port on which to listen")
-	debug    = flag.Bool("debug", false, "print all messages to stdout")
+	verbose  = flag.Bool("verbose", false, "print all messages to stdout")
 	publish  = flag.Bool("publish", false, "publish messages to kafka")
 	topic    = flag.String("topic", "syslog", "kafka topic to publish on")
 	zkstring = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
@@ -23,7 +23,7 @@ var (
 
 type config struct {
 	port     int
-	debug    bool
+	verbose  bool
 	publish  bool
 	topic    string
 	zkstring string
@@ -55,7 +55,7 @@ func (s *server) process(line []byte) {
 		}
 	}
 
-	if s.config.debug {
+	if s.config.verbose {
 		for k, v := range parts {
 			s.logger.Println(k, ":", v)
 		}
@@ -90,9 +90,9 @@ func (s *server) stop() {
 
 func (s *server) start() error {
 	s.logger.Printf("starting to listen on %d\n", s.config.port)
-	
-	if s.config.debug {
-		s.logger.Println("debug is enabled, all messages will be printed to stderr")
+
+	if s.config.verbose {
+		s.logger.Println("verbose is enabled, all messages will be printed to stderr")
 	}
 
 	// listen for inbound syslog messages over tcp
@@ -165,11 +165,11 @@ func handleInterrupt(s *server) {
 
 func main() {
 	flag.Parse()
-	
+
 	logger := log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lshortfile)
 	config := &config{
 		port:     *port,
-		debug:    *debug,
+		verbose:  *verbose,
 		publish:  *publish,
 		topic:    *topic,
 		zkstring: *zkstring,
