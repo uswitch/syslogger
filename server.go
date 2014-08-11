@@ -11,29 +11,32 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 var (
-	cfg      *config
-	logger   = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lshortfile)
-	port     = flag.Int("port", 514, "port on which to listen")
-	verbose  = flag.Bool("verbose", false, "print all messages to stdout")
-	publish  = flag.Bool("publish", false, "publish messages to kafka")
-	topic    = flag.String("topic", "syslog", "kafka topic to publish on")
-	zkstring = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
+	cfg       *config
+	logger    = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lshortfile)
+	port      = flag.Int("port", 514, "port on which to listen")
+	verbose   = flag.Bool("verbose", false, "print all messages to stdout")
+	publish   = flag.Bool("publish", false, "publish messages to kafka")
+	topic     = flag.String("topic", "syslog", "kafka topic to publish on")
+	zkstring  = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
+	flushTime = flag.String("flushTime", "1s", "max time before flushing messages to kafka, e.g. 1s, 2m")
 )
 
 type config struct {
-	port     int
-	verbose  bool
-	publish  bool
-	topic    string
-	zkstring string
+	port      int
+	verbose   bool
+	publish   bool
+	topic     string
+	zkstring  string
+	flushTime time.Duration
 }
 
 func (c *config) String() string {
-	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s",
-		c.port, c.verbose, c.publish, c.topic, c.zkstring)
+	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s, flushTime: %s",
+		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.flushTime)
 }
 
 type server struct {
@@ -74,7 +77,9 @@ func (s *server) handleConnection(conn net.Conn) {
 	logger.Println("got connection from:", conn.RemoteAddr())
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
-		s.process([]byte(scanner.Text()))
+		b := []byte(scanner.Text())
+		logger.Printf("received %d bytes\n", len(b))
+		s.process(b)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -130,13 +135,25 @@ func (s *server) start() error {
 		s.client = client
 
 		// producer for kafka
-		producer, err := sarama.NewProducer(client, nil)
+		producerConfig := sarama.NewProducerConfig()
+		producerConfig.MaxBufferTime = cfg.flushTime
+
+		producer, err := sarama.NewProducer(client, producerConfig)
 		if err != nil {
 			return err
 		}
 		s.producer = producer
+
+		go func() {
+			for err := range s.producer.Errors() {
+				if err != nil {
+					logger.Println(err)
+				}
+			}
+		}()
 	}
 
+	logger.Println("waiting for syslog connection")
 	for {
 		// TODO
 		// We get errors here when killing the app with Ctrl-C:
@@ -175,12 +192,18 @@ func handleInterrupt(s *server) {
 func main() {
 	flag.Parse()
 
+	ft, err := time.ParseDuration(*flushTime)
+	if err != nil {
+		logger.Fatalln(err)
+	}
+
 	cfg = &config{
-		port:     *port,
-		verbose:  *verbose,
-		publish:  *publish,
-		topic:    *topic,
-		zkstring: *zkstring,
+		port:      *port,
+		verbose:   *verbose,
+		publish:   *publish,
+		topic:     *topic,
+		zkstring:  *zkstring,
+		flushTime: ft,
 	}
 
 	logger.Println("starting with config:", cfg)
