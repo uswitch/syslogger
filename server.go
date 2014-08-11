@@ -22,7 +22,7 @@ var (
 	publish   = flag.Bool("publish", false, "publish messages to kafka")
 	topic     = flag.String("topic", "syslog", "kafka topic to publish on")
 	zkstring  = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
-	flushTime = flag.String("flushTime", "1s", "max time before flushing messages to kafka, e.g. 1s, 2m")
+	flushTime = flag.String("flushTime", "10s", "max time before flushing messages to kafka, e.g. 1s, 2m")
 )
 
 type config struct {
