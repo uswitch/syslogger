@@ -21,29 +21,38 @@ func counterEvent(name string, count int64) *raidman.Event {
         }
 }
 
-func meterEvents(name string, measure string, metric metrics.Meter) []*raidman.Event {
+func meterEvents(name string, metric metrics.Meter) []*raidman.Event {
 	return []*raidman.Event{
-		&raidman.Event{
-			Host: "",
-			Service: metricName(fmt.Sprintf("%s-%s", name, "meanRate")),
-			Metric: metric.RateMean(),
-		},
-		&raidman.Event{
-			Host: "",
-			Service: metricName(fmt.Sprintf("%s-%s", name, "oneMinuteRate")),
-			Metric: metric.Rate1(),
-		},
-		&raidman.Event{
-			Host: "",
-			Service: metricName(fmt.Sprintf("%s-%s", name, "fiveMinuteRate")),
-			Metric: metric.Rate5(),
-		},
-		&raidman.Event{
-			Host: "",
-			Service: metricName(fmt.Sprintf("%s-%s", name, "fifteenMinuteRate")),
-			Metric: metric.Rate15(),
-		},
+		event(name, "meanRate", metric.RateMean()),
+		event(name, "oneMinuteRate", metric.Rate1()),
+		event(name, "fiveMinuteRate", metric.Rate5()),
+		event(name, "fifteenMinuteRate", metric.Rate15()),
 	}
+}
+
+func event(name string, measure string, val interface{}) *raidman.Event {
+	return &raidman.Event{
+		Host: "",
+		Service: metricName(fmt.Sprintf("%s-%s", name, measure)),
+		Metric: val,
+	}
+}
+
+func histogramEvents(name string, metric metrics.Histogram) []*raidman.Event {
+	events := []*raidman.Event{
+		event(name, "min", int(metric.Min())),
+		event(name, "max", int(metric.Max())),
+		event(name, "mean", metric.Mean()),
+		event(name, "std-dev", metric.StdDev()),
+	}
+
+	percentiles := []float64 {0.75, 0.95, 0.99, 0.999}
+	percentileVals := metric.Percentiles(percentiles)
+	for i, p := range percentiles {
+		e := event(name, fmt.Sprintf("percentile %.3f", p), percentileVals[i])
+		events = append(events, e)
+	}
+	return events
 }
 
 func Raybans(r metrics.Registry, d time.Duration, c *raidman.Client) {
@@ -58,7 +67,15 @@ func Raybans(r metrics.Registry, d time.Duration, c *raidman.Client) {
 					logger.Println(err)
 				}
 			case metrics.Meter:
-				events := meterEvents(name, "mean", metric.Snapshot())
+				events := meterEvents(name, metric.Snapshot())
+				for _, e := range events {
+					err := c.Send(e)
+					if err != nil {
+						logger.Println(err)
+					}
+				}
+			case metrics.Histogram:
+				events := histogramEvents(name, metric.Snapshot())
 				for _, e := range events {
 					err := c.Send(e)
 					if err != nil {

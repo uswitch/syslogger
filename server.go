@@ -28,8 +28,10 @@ var (
 	riemann   = flag.String("riemann", "localhost:5555", "Riemann TCP host:port")
 	flushTime = flag.String("flushTime", "10s", "max time before flushing messages to kafka, e.g. 1s, 2m")
 
-	openConnections = metrics.NewCounter()
-	outboundMeter = metrics.NewMeter()
+	connectionsCounter = metrics.NewCounter()
+	sendMeter = metrics.NewMeter()
+	sendErrorsMeter = metrics.NewMeter()
+	sendHistogram = metrics.NewHistogram(metrics.NewExpDecaySample(1028, 0.015))
 )
 
 type config struct {
@@ -76,11 +78,16 @@ func (s *server) process(line []byte) {
 		}
 
 		put := func() error {
+			started := time.Now()
 			err := s.producer.SendMessage(cfg.topic, nil, sarama.StringEncoder(content))
+			duration := time.Since(started)
+			sendHistogram.Update(duration.Nanoseconds() / 1000000)
+
 			if err != nil {
-				logger.Println("error queueing message, will retry.", err)
+				logger.Println("error sending message, will retry.", err)
+				sendErrorsMeter.Mark(1)
 			} else {
-				outboundMeter.Mark(1)
+				sendMeter.Mark(1)
 			}
 			return err
 		}
@@ -116,7 +123,7 @@ func (s *server) handleConnection(conn *openConnection) {
 
 	logger.Println("exiting connection handler")
 	conn.done <- true
-	openConnections.Dec(1)
+	connectionsCounter.Dec(1)
 }
 
 func (s *server) stop() {
@@ -198,7 +205,7 @@ func (s *server) start() error {
 					connection: conn,
 					done:       make(chan bool),
 				}
-				openConnections.Inc(1)
+				connectionsCounter.Inc(1)
 				connections <- connection
 			}
 		}
@@ -247,8 +254,10 @@ func handleInterrupt(s *server) {
 }
 
 func registerMetrics() {
-	metrics.Register("openConnections count", openConnections)
-	metrics.Register("outboundMessage", outboundMeter)
+	metrics.Register("openConnections count", connectionsCounter)
+	metrics.Register("sentMessages", sendMeter)
+	metrics.Register("sendMessageErrors count", sendErrorsMeter)
+	metrics.Register("sendMessage timeMs", sendHistogram)
 }
 
 func main() {
