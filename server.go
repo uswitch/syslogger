@@ -69,9 +69,9 @@ func (s *server) process(line []byte) {
 		}
 
 		put := func() error {
-			err := s.producer.QueueMessage(cfg.topic, nil, sarama.StringEncoder(content))
+			err := s.producer.SendMessage(cfg.topic, nil, sarama.StringEncoder(content))
 			if err != nil {
-				logger.Println("error queueing message, will retry", err)
+				logger.Println("error queueing message, will retry.", err)
 			}
 			return err
 		}
@@ -81,7 +81,7 @@ func (s *server) process(line []byte) {
 		err := backoff.Retry(put, policy)
 		if err != nil {
 			// retrying a bunch of times failed...
-			logger.Println("failed sending message", err)
+			logger.Println("failed sending message.", err)
 		}
 
 	}
@@ -98,7 +98,6 @@ func (s *server) handleConnection(conn *openConnection) {
 	scanner := bufio.NewScanner(conn.connection)
 	for scanner.Scan() {
 		b := []byte(scanner.Text())
-		logger.Printf("received %d bytes\n", len(b))
 		s.process(b)
 	}
 
@@ -174,14 +173,6 @@ func (s *server) start() error {
 			return err
 		}
 		s.producer = producer
-
-		go func() {
-			for err := range s.producer.Errors() {
-				if err != nil {
-					logger.Println(err)
-				}
-			}
-		}()
 	}
 
 	connections := make(chan *openConnection)
