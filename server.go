@@ -96,8 +96,8 @@ func (s *server) stop() {
 	}
 
 	if cfg.publish {
-		s.client.Close()
 		s.producer.Close()
+		s.client.Close()
 	}
 }
 
