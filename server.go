@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Shopify/sarama"
+	"github.com/cenkalti/backoff"
 	rfc3164 "github.com/jeromer/syslogparser/rfc3164"
 	"log"
 	"net"
@@ -67,11 +68,22 @@ func (s *server) process(line []byte) {
 			logger.Println("enqueuing", content)
 		}
 
-		err := s.producer.QueueMessage(cfg.topic,
-			nil, sarama.StringEncoder(content))
-		if err != nil {
-			logger.Println("failed publishing", err)
+		put := func() error {
+			err := s.producer.QueueMessage(cfg.topic, nil, sarama.StringEncoder(content))
+			if err != nil {
+				logger.Println("error queueing message, will retry", err)
+			}
+			return err
 		}
+
+		policy := backoff.NewExponentialBackOff()
+		policy.MaxElapsedTime = time.Minute * 5
+		err := backoff.Retry(put, policy)
+		if err != nil {
+			// retrying a bunch of times failed...
+			logger.Println("failed sending message", err)
+		}
+
 	}
 
 	if cfg.verbose {
