@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Shopify/sarama"
+	"github.com/amir/raidman"
+	"github.com/rcrowley/go-metrics"
 	"github.com/cenkalti/backoff"
 	rfc3164 "github.com/jeromer/syslogparser/rfc3164"
 	"log"
@@ -23,7 +25,10 @@ var (
 	publish   = flag.Bool("publish", false, "publish messages to kafka")
 	topic     = flag.String("topic", "syslog", "kafka topic to publish on")
 	zkstring  = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
+	riemann   = flag.String("riemann", "localhost:5555", "Riemann TCP host:port")
 	flushTime = flag.String("flushTime", "10s", "max time before flushing messages to kafka, e.g. 1s, 2m")
+
+	openConnections = metrics.NewCounter()
 )
 
 type config struct {
@@ -33,11 +38,12 @@ type config struct {
 	topic     string
 	zkstring  string
 	flushTime time.Duration
+	riemann   string
 }
 
 func (c *config) String() string {
-	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s, flushTime: %s",
-		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.flushTime)
+	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s, flushTime: %s, riemann: %s",
+		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.flushTime, c.riemann)
 }
 
 type openConnection struct {
@@ -107,6 +113,7 @@ func (s *server) handleConnection(conn *openConnection) {
 
 	logger.Println("exiting connection handler")
 	conn.done <- true
+	openConnections.Dec(1)
 }
 
 func (s *server) stop() {
@@ -188,6 +195,7 @@ func (s *server) start() error {
 					connection: conn,
 					done:       make(chan bool),
 				}
+				openConnections.Inc(1)
 				connections <- connection
 			}
 		}
@@ -235,6 +243,10 @@ func handleInterrupt(s *server) {
 	}()
 }
 
+func registerMetrics() {
+	metrics.Register("openConnections count", openConnections)
+}
+
 func main() {
 	flag.Parse()
 
@@ -250,9 +262,18 @@ func main() {
 		topic:     *topic,
 		zkstring:  *zkstring,
 		flushTime: ft,
+		riemann:   *riemann,
 	}
 
 	logger.Println("starting with config:", cfg)
+
+	registerMetrics()
+
+	c, err := raidman.Dial("tcp", cfg.riemann)
+        if err != nil {
+                logger.Fatalln("failed to connect to riemann:", err)
+        }
+	go Raybans(metrics.DefaultRegistry, time.Second, c)
 
 	server := &server{
 		connections: []*openConnection{},
