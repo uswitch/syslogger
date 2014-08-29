@@ -29,6 +29,7 @@ var (
 	flushTime = flag.String("flushTime", "10s", "max time before flushing messages to kafka, e.g. 1s, 2m")
 
 	openConnections = metrics.NewCounter()
+	outboundMeter = metrics.NewMeter()
 )
 
 type config struct {
@@ -78,6 +79,8 @@ func (s *server) process(line []byte) {
 			err := s.producer.SendMessage(cfg.topic, nil, sarama.StringEncoder(content))
 			if err != nil {
 				logger.Println("error queueing message, will retry.", err)
+			} else {
+				outboundMeter.Mark(1)
 			}
 			return err
 		}
@@ -245,6 +248,7 @@ func handleInterrupt(s *server) {
 
 func registerMetrics() {
 	metrics.Register("openConnections count", openConnections)
+	metrics.Register("outboundMessage", outboundMeter)
 }
 
 func main() {
