@@ -27,34 +27,40 @@ func LookupBrokers(zkString string) ([]*KafkaBroker, error) {
 
 	defer conn.Close()
 
-	// TODO: should we use timeout channel too?
-	for event := range channel {
-		if event.Type == zookeeper.EVENT_SESSION && event.State == zookeeper.STATE_CONNECTED {
-			brokerIds, _, err := conn.Children("/brokers/ids")
-			if err != nil {
-				return nil, err
-			}
+	timeout := time.After(time.Second * 10)
 
-			if len(brokerIds) == 0 {
-				return nil, noBrokersError
-			}
-
-			for _, bid := range brokerIds {
-				path := fmt.Sprintf("/brokers/ids/%s", bid)
-				data, _, err := conn.Get(path)
+	for {
+		select {
+		case event := <-channel:
+			if event.Type == zookeeper.EVENT_SESSION && event.State == zookeeper.STATE_CONNECTED {
+				brokerIds, _, err := conn.Children("/brokers/ids")
 				if err != nil {
 					return nil, err
 				}
 
-				var b KafkaBroker
-				err = json.Unmarshal([]byte(data), &b)
-				if err != nil {
-					return nil, err
+				if len(brokerIds) == 0 {
+					return nil, noBrokersError
 				}
-				brokers = append(brokers, &b)
-			}
 
-			return brokers, nil
+				for _, bid := range brokerIds {
+					path := fmt.Sprintf("/brokers/ids/%s", bid)
+					data, _, err := conn.Get(path)
+					if err != nil {
+						return nil, err
+					}
+
+					var b KafkaBroker
+					err = json.Unmarshal([]byte(data), &b)
+					if err != nil {
+						return nil, err
+					}
+					brokers = append(brokers, &b)
+				}
+
+				return brokers, nil
+			}
+		case <-timeout:
+			return nil, errors.New("brokers: timeout waiting for zookeeper session connect")
 		}
 	}
 

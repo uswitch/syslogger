@@ -39,11 +39,17 @@ func (c *config) String() string {
 		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.flushTime)
 }
 
+type openConnection struct {
+	connection net.Conn
+	done       chan bool
+}
+
 type server struct {
 	listener    net.Listener
-	connections []net.Conn
+	connections []*openConnection
 	client      *sarama.Client
 	producer    *sarama.Producer
+	shutdown    chan bool
 }
 
 func (s *server) process(line []byte) {
@@ -73,9 +79,11 @@ func (s *server) process(line []byte) {
 	}
 }
 
-func (s *server) handleConnection(conn net.Conn) {
-	logger.Println("got connection from:", conn.RemoteAddr())
-	scanner := bufio.NewScanner(conn)
+func (s *server) handleConnection(conn *openConnection) {
+	defer conn.connection.Close()
+
+	logger.Println("got connection from:", conn.connection.RemoteAddr())
+	scanner := bufio.NewScanner(conn.connection)
 	for scanner.Scan() {
 		b := []byte(scanner.Text())
 		logger.Printf("received %d bytes\n", len(b))
@@ -85,19 +93,30 @@ func (s *server) handleConnection(conn net.Conn) {
 	if err := scanner.Err(); err != nil {
 		logger.Println("error reading from connection:", err)
 	}
+
+	logger.Println("exiting connection handler")
+	conn.done <- true
 }
 
 func (s *server) stop() {
+	s.shutdown <- true
 	s.listener.Close()
 
 	for _, conn := range s.connections {
-		logger.Println("closing connection to", conn.RemoteAddr())
-		conn.Close()
+		logger.Println("closing connection to", conn.connection.RemoteAddr())
+		conn.connection.Close()
 	}
+
+	logger.Println("waiting for", len(s.connections), "connections to close")
+	for _, conn := range s.connections {
+		<-conn.done
+	}
+	logger.Println("all connections closed")
 
 	if cfg.publish {
 		s.producer.Close()
 		s.client.Close()
+		logger.Println("finished stopping producer")
 	}
 }
 
@@ -153,19 +172,40 @@ func (s *server) start() error {
 		}()
 	}
 
+	connections := make(chan *openConnection)
+	errors := make(chan error)
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				errors <- err
+			} else {
+				connection := &openConnection{
+					connection: conn,
+					done:       make(chan bool),
+				}
+				connections <- connection
+			}
+		}
+	}()
+
 	logger.Println("waiting for syslog connection")
 	for {
-		// TODO
-		// We get errors here when killing the app with Ctrl-C:
-		// server.go:134: failed to accept connection: use of closed network connection
-		conn, err := listener.Accept()
-		if err != nil {
+		select {
+		case conn := <-connections:
+			s.connections = append(s.connections, conn)
+			go s.handleConnection(conn)
+		case err := <-errors:
 			logger.Println("failed to accept connection:", err)
-			return err
+		case <-s.shutdown:
+			goto exit
 		}
-		s.connections = append(s.connections, conn)
-		go s.handleConnection(conn)
 	}
+
+exit:
+	logger.Println("exiting listen loop")
+	return nil
 }
 
 func handleInterrupt(s *server) {
@@ -209,7 +249,8 @@ func main() {
 	logger.Println("starting with config:", cfg)
 
 	server := &server{
-		connections: []net.Conn{},
+		connections: []*openConnection{},
+		shutdown:    make(chan bool),
 	}
 
 	handleInterrupt(server)
