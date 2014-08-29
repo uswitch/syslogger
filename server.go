@@ -224,8 +224,11 @@ func handleInterrupt(s *server) {
 				os.Exit(0)
 				break
 			case syscall.SIGUSR1:
-				// TODO: refresh/reload things?
-				logger.Println("refreshing kafka endpoints?")
+				logger.Println("refreshing kafka metadata")
+				err := s.client.RefreshAllMetadata()
+				if err != nil {
+					logger.Println("error refreshing metadata.", err)
+				}
 				break
 			}
 		}
