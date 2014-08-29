@@ -111,9 +111,14 @@ func (s *server) handleConnection(conn *openConnection) {
 	defer conn.connection.Close()
 
 	logger.Println("got connection from:", conn.connection.RemoteAddr())
+
+	incomingMessageMeter := metrics.NewMeter()
+	metrics.Register(fmt.Sprintf("%s incomingMessages", conn.connection.RemoteAddr()), incomingMessageMeter)
+
 	scanner := bufio.NewScanner(conn.connection)
 	for scanner.Scan() {
 		b := []byte(scanner.Text())
+		incomingMessageMeter.Mark(1)
 		s.process(b)
 	}
 

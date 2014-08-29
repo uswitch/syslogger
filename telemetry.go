@@ -64,14 +64,14 @@ func Raybans(r metrics.Registry, d time.Duration, c *raidman.Client) {
 
 				err := c.Send(e)
 				if err != nil {
-					logger.Println(err)
+					logger.Println("error sending riemann metric.", err)
 				}
 			case metrics.Meter:
 				events := meterEvents(name, metric.Snapshot())
 				for _, e := range events {
 					err := c.Send(e)
 					if err != nil {
-						logger.Println(err)
+						logger.Println("error sending riemann metric.", err)
 					}
 				}
 			case metrics.Histogram:
@@ -79,7 +79,7 @@ func Raybans(r metrics.Registry, d time.Duration, c *raidman.Client) {
 				for _, e := range events {
 					err := c.Send(e)
 					if err != nil {
-						logger.Println(err)
+						logger.Println("error sending riemann metric.", err)
 					}
 				}
 			}
