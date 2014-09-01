@@ -1,13 +1,13 @@
 package main
 
 import (
-	"github.com/amir/raidman"
-	"github.com/rcrowley/go-metrics"
-	"github.com/cenkalti/backoff"
-	"time"
-	"os"
 	"fmt"
+	"github.com/amir/raidman"
+	"github.com/cenkalti/backoff"
+	"github.com/rcrowley/go-metrics"
+	"os"
 	"path"
+	"time"
 )
 
 func metricName(name string) string {
@@ -19,7 +19,7 @@ func counterEvent(name string, count int64) *raidman.Event {
 		Host:    "", // empty string is converted to os.Hostname() by raidman
 		Service: metricName(name),
 		Metric:  int(count),
-        }
+	}
 }
 
 func meterEvents(name string, metric metrics.Meter) []*raidman.Event {
@@ -33,9 +33,9 @@ func meterEvents(name string, metric metrics.Meter) []*raidman.Event {
 
 func event(name string, measure string, val interface{}) *raidman.Event {
 	return &raidman.Event{
-		Host: "",
+		Host:    "",
 		Service: metricName(fmt.Sprintf("%s-%s", name, measure)),
-		Metric: val,
+		Metric:  val,
 	}
 }
 
@@ -47,7 +47,7 @@ func histogramEvents(name string, metric metrics.Histogram) []*raidman.Event {
 		event(name, "std-dev", metric.StdDev()),
 	}
 
-	percentiles := []float64 {0.75, 0.95, 0.99, 0.999}
+	percentiles := []float64{0.75, 0.95, 0.99, 0.999}
 	percentileVals := metric.Percentiles(percentiles)
 	for i, p := range percentiles {
 		e := event(name, fmt.Sprintf("percentile %.3f", p), percentileVals[i])
@@ -59,6 +59,7 @@ func histogramEvents(name string, metric metrics.Histogram) []*raidman.Event {
 type InfiniteBackoff struct {
 	RetryInterval time.Duration
 }
+
 func (b *InfiniteBackoff) NextBackOff() time.Duration {
 	return b.RetryInterval
 }
@@ -90,7 +91,7 @@ func establishRiemannClient() chan *raidman.Client {
 func Raybans(r metrics.Registry, d time.Duration) {
 	var c *raidman.Client
 	ch := establishRiemannClient()
-	c = <- ch
+	c = <-ch
 
 	for _ = range time.Tick(d) {
 		r.Each(func(name string, i interface{}) {
@@ -103,7 +104,7 @@ func Raybans(r metrics.Registry, d time.Duration) {
 					logger.Println("error sending riemann metric.", err)
 					c.Close()
 					ch := establishRiemannClient()
-					c = <- ch
+					c = <-ch
 				}
 			case metrics.Meter:
 				events := meterEvents(name, metric.Snapshot())
@@ -113,7 +114,7 @@ func Raybans(r metrics.Registry, d time.Duration) {
 						logger.Println("error sending riemann metric.", err)
 						c.Close()
 						ch := establishRiemannClient()
-						c = <- ch
+						c = <-ch
 					}
 				}
 			case metrics.Histogram:
@@ -124,7 +125,7 @@ func Raybans(r metrics.Registry, d time.Duration) {
 						logger.Println("error sending riemann metric.", err)
 						c.Close()
 						ch := establishRiemannClient()
-						c = <- ch
+						c = <-ch
 					}
 				}
 			}
