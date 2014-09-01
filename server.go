@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Shopify/sarama"
-	"github.com/amir/raidman"
 	"github.com/cenkalti/backoff"
 	rfc3164 "github.com/jeromer/syslogparser/rfc3164"
 	"github.com/rcrowley/go-metrics"
@@ -287,11 +286,7 @@ func main() {
 
 	registerMetrics()
 
-	c, err := raidman.Dial("tcp", cfg.riemann)
-	if err != nil {
-		logger.Fatalln("failed to connect to riemann:", err)
-	}
-	go Raybans(metrics.DefaultRegistry, time.Second, c)
+	go Raybans(metrics.DefaultRegistry, time.Second)
 
 	server := &server{
 		connections: []*openConnection{},

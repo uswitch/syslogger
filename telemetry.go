@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/amir/raidman"
 	"github.com/rcrowley/go-metrics"
+	"github.com/cenkalti/backoff"
 	"time"
 	"os"
 	"fmt"
@@ -55,7 +56,42 @@ func histogramEvents(name string, metric metrics.Histogram) []*raidman.Event {
 	return events
 }
 
-func Raybans(r metrics.Registry, d time.Duration, c *raidman.Client) {
+type InfiniteBackoff struct {
+	RetryInterval time.Duration
+}
+func (b *InfiniteBackoff) NextBackOff() time.Duration {
+	return b.RetryInterval
+}
+func (b *InfiniteBackoff) Reset() {
+}
+
+func establishRiemannClient() chan *raidman.Client {
+	connChannel := make(chan *raidman.Client)
+
+	go func() {
+		connect := func() error {
+			c, err := raidman.Dial("tcp", cfg.riemann)
+			if err != nil {
+				logger.Println("Error connecting to Riemann, will retry.", err)
+				return err
+			} else {
+				connChannel <- c
+				return nil
+			}
+		}
+
+		policy := &InfiniteBackoff{time.Second * 5}
+		backoff.Retry(connect, policy)
+	}()
+
+	return connChannel
+}
+
+func Raybans(r metrics.Registry, d time.Duration) {
+	var c *raidman.Client
+	ch := establishRiemannClient()
+	c = <- ch
+
 	for _ = range time.Tick(d) {
 		r.Each(func(name string, i interface{}) {
 			switch metric := i.(type) {
@@ -65,6 +101,9 @@ func Raybans(r metrics.Registry, d time.Duration, c *raidman.Client) {
 				err := c.Send(e)
 				if err != nil {
 					logger.Println("error sending riemann metric.", err)
+					c.Close()
+					ch := establishRiemannClient()
+					c = <- ch
 				}
 			case metrics.Meter:
 				events := meterEvents(name, metric.Snapshot())
@@ -72,6 +111,9 @@ func Raybans(r metrics.Registry, d time.Duration, c *raidman.Client) {
 					err := c.Send(e)
 					if err != nil {
 						logger.Println("error sending riemann metric.", err)
+						c.Close()
+						ch := establishRiemannClient()
+						c = <- ch
 					}
 				}
 			case metrics.Histogram:
@@ -80,6 +122,9 @@ func Raybans(r metrics.Registry, d time.Duration, c *raidman.Client) {
 					err := c.Send(e)
 					if err != nil {
 						logger.Println("error sending riemann metric.", err)
+						c.Close()
+						ch := establishRiemannClient()
+						c = <- ch
 					}
 				}
 			}
