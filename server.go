@@ -17,14 +17,14 @@ import (
 )
 
 var (
-	cfg       *config
-	logger    = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lshortfile)
-	port      = flag.Int("port", 514, "port on which to listen")
-	verbose   = flag.Bool("verbose", false, "print all messages to stdout")
-	publish   = flag.Bool("publish", false, "publish messages to kafka")
-	topic     = flag.String("topic", "syslog", "kafka topic to publish on")
-	zkstring  = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
-	riemann   = flag.String("riemann", "localhost:5555", "Riemann TCP host:port")
+	cfg      *config
+	logger   = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lshortfile)
+	port     = flag.Int("port", 514, "port on which to listen")
+	verbose  = flag.Bool("verbose", false, "print all messages to stdout")
+	publish  = flag.Bool("publish", false, "publish messages to kafka")
+	topic    = flag.String("topic", "syslog", "kafka topic to publish on")
+	zkstring = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
+	riemann  = flag.String("riemann", "localhost:5555", "Riemann TCP host:port")
 
 	connectionsCounter = metrics.NewCounter()
 	sendMeter          = metrics.NewMeter()
@@ -33,12 +33,12 @@ var (
 )
 
 type config struct {
-	port      int
-	verbose   bool
-	publish   bool
-	topic     string
-	zkstring  string
-	riemann   string
+	port     int
+	verbose  bool
+	publish  bool
+	topic    string
+	zkstring string
+	riemann  string
 }
 
 func (c *config) String() string {
@@ -262,12 +262,12 @@ func main() {
 	flag.Parse()
 
 	cfg = &config{
-		port:      *port,
-		verbose:   *verbose,
-		publish:   *publish,
-		topic:     *topic,
-		zkstring:  *zkstring,
-		riemann:   *riemann,
+		port:     *port,
+		verbose:  *verbose,
+		publish:  *publish,
+		topic:    *topic,
+		zkstring: *zkstring,
+		riemann:  *riemann,
 	}
 
 	logger.Println("starting with config:", cfg)
