@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	"github.com/amir/raidman"
-	"github.com/rcrowley/go-metrics"
 	"github.com/cenkalti/backoff"
 	rfc3164 "github.com/jeromer/syslogparser/rfc3164"
+	"github.com/rcrowley/go-metrics"
 	"log"
 	"net"
 	"os"
@@ -29,9 +29,9 @@ var (
 	flushTime = flag.String("flushTime", "10s", "max time before flushing messages to kafka, e.g. 1s, 2m")
 
 	connectionsCounter = metrics.NewCounter()
-	sendMeter = metrics.NewMeter()
-	sendErrorsMeter = metrics.NewMeter()
-	sendHistogram = metrics.NewHistogram(metrics.NewExpDecaySample(1028, 0.015))
+	sendMeter          = metrics.NewMeter()
+	sendErrorsMeter    = metrics.NewMeter()
+	sendHistogram      = metrics.NewHistogram(metrics.NewExpDecaySample(1028, 0.015))
 )
 
 type config struct {
@@ -288,9 +288,9 @@ func main() {
 	registerMetrics()
 
 	c, err := raidman.Dial("tcp", cfg.riemann)
-        if err != nil {
-                logger.Fatalln("failed to connect to riemann:", err)
-        }
+	if err != nil {
+		logger.Fatalln("failed to connect to riemann:", err)
+	}
 	go Raybans(metrics.DefaultRegistry, time.Second, c)
 
 	server := &server{

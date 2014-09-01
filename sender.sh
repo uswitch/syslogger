@@ -7,5 +7,6 @@ while true; do
     logger "hi from sender $i"
     i=$[$i+1]
     sleep 1
+    # sleep $(( ( ( RANDOM % 10 )  + 1 ) / 10))
 done
 
