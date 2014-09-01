@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/Shopify/sarama"
@@ -67,16 +68,21 @@ func (s *server) process(line []byte) {
 	}
 
 	parts := p.Dump()
-	content := parts["content"].(string)
+
+	jsonBytes, err := json.Marshal(parts)
+	if err != nil {
+		logger.Println("error marshaling message, skipping.", err)
+		return
+	}
 
 	if cfg.publish {
 		if cfg.verbose {
-			logger.Println("enqueuing", content)
+			logger.Println("enqueuing", string(jsonBytes))
 		}
 
 		put := func() error {
 			started := time.Now()
-			err := s.producer.SendMessage(cfg.topic, nil, sarama.StringEncoder(content))
+			err := s.producer.SendMessage(cfg.topic, nil, sarama.ByteEncoder(jsonBytes))
 			duration := time.Since(started)
 			sendHistogram.Update(duration.Nanoseconds() / 1000000)
 
@@ -97,10 +103,6 @@ func (s *server) process(line []byte) {
 			logger.Println("failed sending message.", err)
 		}
 
-	}
-
-	if cfg.verbose {
-		logger.Println(content)
 	}
 }
 
