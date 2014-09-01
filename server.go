@@ -25,7 +25,6 @@ var (
 	topic     = flag.String("topic", "syslog", "kafka topic to publish on")
 	zkstring  = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
 	riemann   = flag.String("riemann", "localhost:5555", "Riemann TCP host:port")
-	flushTime = flag.String("flushTime", "10s", "max time before flushing messages to kafka, e.g. 1s, 2m")
 
 	connectionsCounter = metrics.NewCounter()
 	sendMeter          = metrics.NewMeter()
@@ -39,13 +38,12 @@ type config struct {
 	publish   bool
 	topic     string
 	zkstring  string
-	flushTime time.Duration
 	riemann   string
 }
 
 func (c *config) String() string {
-	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s, flushTime: %s, riemann: %s",
-		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.flushTime, c.riemann)
+	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s, riemann: %s",
+		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.riemann)
 }
 
 type openConnection struct {
@@ -185,11 +183,7 @@ func (s *server) start() error {
 		}
 		s.client = client
 
-		// producer for kafka
-		producerConfig := sarama.NewProducerConfig()
-		producerConfig.MaxBufferTime = cfg.flushTime
-
-		producer, err := sarama.NewProducer(client, producerConfig)
+		producer, err := sarama.NewProducer(client, sarama.NewProducerConfig())
 		if err != nil {
 			return err
 		}
@@ -267,18 +261,12 @@ func registerMetrics() {
 func main() {
 	flag.Parse()
 
-	ft, err := time.ParseDuration(*flushTime)
-	if err != nil {
-		logger.Fatalln(err)
-	}
-
 	cfg = &config{
 		port:      *port,
 		verbose:   *verbose,
 		publish:   *publish,
 		topic:     *topic,
 		zkstring:  *zkstring,
-		flushTime: ft,
 		riemann:   *riemann,
 	}
 
