@@ -208,7 +208,7 @@ func (s *server) start() error {
 			} else {
 				connection := &openConnection{
 					connection: conn,
-					done:       make(chan bool),
+					done:       make(chan bool, 1),
 				}
 				connectionsCounter.Inc(1)
 				connections <- connection
