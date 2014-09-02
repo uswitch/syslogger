@@ -8,7 +8,8 @@ import (
 	"github.com/Shopify/sarama"
 	rfc3164 "github.com/jeromer/syslogparser/rfc3164"
 	"github.com/pingles/backoff"
-	"github.com/rcrowley/go-metrics"
+	"github.com/pingles/go-metrics"
+	"github.com/pingles/go-metrics/riemann"
 	"log"
 	"net"
 	"os"
@@ -18,14 +19,14 @@ import (
 )
 
 var (
-	cfg      *config
-	logger   = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lshortfile)
-	port     = flag.Int("port", 514, "port on which to listen")
-	verbose  = flag.Bool("verbose", false, "print all messages to stdout")
-	publish  = flag.Bool("publish", false, "publish messages to kafka")
-	topic    = flag.String("topic", "syslog", "kafka topic to publish on")
-	zkstring = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
-	riemann  = flag.String("riemann", "localhost:5555", "Riemann TCP host:port")
+	cfg         *config
+	logger      = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lshortfile)
+	port        = flag.Int("port", 514, "port on which to listen")
+	verbose     = flag.Bool("verbose", false, "print all messages to stdout")
+	publish     = flag.Bool("publish", false, "publish messages to kafka")
+	topic       = flag.String("topic", "syslog", "kafka topic to publish on")
+	zkstring    = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
+	riemannHost = flag.String("riemann", "localhost:5555", "Riemann TCP host:port")
 
 	connectionsCounter = metrics.NewCounter()
 	sendMeter          = metrics.NewMeter()
@@ -34,17 +35,17 @@ var (
 )
 
 type config struct {
-	port     int
-	verbose  bool
-	publish  bool
-	topic    string
-	zkstring string
-	riemann  string
+	port        int
+	verbose     bool
+	publish     bool
+	topic       string
+	zkstring    string
+	riemannHost string
 }
 
 func (c *config) String() string {
-	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s, riemann: %s",
-		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.riemann)
+	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s, riemannHost: %s",
+		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.riemannHost)
 }
 
 type openConnection struct {
@@ -266,19 +267,19 @@ func main() {
 	flag.Parse()
 
 	cfg = &config{
-		port:     *port,
-		verbose:  *verbose,
-		publish:  *publish,
-		topic:    *topic,
-		zkstring: *zkstring,
-		riemann:  *riemann,
+		port:        *port,
+		verbose:     *verbose,
+		publish:     *publish,
+		topic:       *topic,
+		zkstring:    *zkstring,
+		riemannHost: *riemannHost,
 	}
 
 	logger.Println("starting with config:", cfg)
 
 	registerMetrics()
 
-	go Raybans(metrics.DefaultRegistry, time.Second)
+	go riemann.Riemann(metrics.DefaultRegistry, time.Second, cfg.riemannHost)
 
 	server := &server{
 		connections: []*openConnection{},
