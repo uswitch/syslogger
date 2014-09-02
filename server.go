@@ -30,7 +30,7 @@ var (
 	connectionsCounter = metrics.NewCounter()
 	sendMeter          = metrics.NewMeter()
 	sendErrorsMeter    = metrics.NewMeter()
-	sendHistogram      = metrics.NewHistogram(metrics.NewExpDecaySample(1028, 0.015))
+	sendTimer          = metrics.NewTimer()
 )
 
 type config struct {
@@ -81,10 +81,12 @@ func (s *server) process(line []byte) {
 		}
 
 		put := func() error {
-			started := time.Now()
-			err := s.producer.SendMessage(cfg.topic, nil, sarama.ByteEncoder(jsonBytes))
-			duration := time.Since(started)
-			sendHistogram.Update(duration.Nanoseconds() / 1000000)
+			var err error
+
+			send := func() {
+				err = s.producer.SendMessage(cfg.topic, nil, sarama.ByteEncoder(jsonBytes))
+			}
+			sendTimer.Time(send)
 
 			if err != nil {
 				logger.Println("error sending message, will retry.", err)
@@ -257,7 +259,7 @@ func registerMetrics() {
 	metrics.Register("openConnections count", connectionsCounter)
 	metrics.Register("sentMessages", sendMeter)
 	metrics.Register("sendMessageErrors count", sendErrorsMeter)
-	metrics.Register("sendMessage timeMs", sendHistogram)
+	metrics.Register("sendMessage", sendTimer)
 }
 
 func main() {
