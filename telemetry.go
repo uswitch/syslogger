@@ -102,6 +102,7 @@ func counterEvent(name string, count int64) *raidman.Event {
 
 func meterEvents(name string, metric metrics.Meter) []*raidman.Event {
 	return []*raidman.Event{
+		event(name, "count", int(metric.Count())),
 		event(name, "mean", metric.RateMean()),
 		event(name, "one-minute", metric.Rate1()),
 		event(name, "five-minute", metric.Rate5()),
@@ -131,6 +132,7 @@ func timerEvents(name string, metric metrics.Timer) []*raidman.Event {
 
 func histogramEvents(name string, metric metrics.Histogram) []*raidman.Event {
 	events := []*raidman.Event{
+		event(name, "count", int(metric.Count())),
 		event(name, "min", int(metric.Min())),
 		event(name, "max", int(metric.Max())),
 		event(name, "mean", metric.Mean()),
