@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/amir/raidman"
-	"github.com/cenkalti/backoff"
+	"github.com/pingles/backoff"
 	"github.com/rcrowley/go-metrics"
 	"os"
 	"path"
@@ -56,16 +56,6 @@ func histogramEvents(name string, metric metrics.Histogram) []*raidman.Event {
 	return events
 }
 
-type InfiniteBackoff struct {
-	RetryInterval time.Duration
-}
-
-func (b *InfiniteBackoff) NextBackOff() time.Duration {
-	return b.RetryInterval
-}
-func (b *InfiniteBackoff) Reset() {
-}
-
 func establishRiemannClient() chan *raidman.Client {
 	connChannel := make(chan *raidman.Client)
 
@@ -81,7 +71,7 @@ func establishRiemannClient() chan *raidman.Client {
 			}
 		}
 
-		policy := &InfiniteBackoff{time.Second * 5}
+		policy := &backoff.ConstantBackoff{time.Second * 5}
 		backoff.Retry(connect, policy)
 	}()
 
