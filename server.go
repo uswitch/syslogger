@@ -76,10 +76,11 @@ func (s *server) process(line []byte) {
 		return
 	}
 
+	if cfg.verbose {
+		logger.Println("enqueuing", string(jsonBytes))
+	}
+
 	if cfg.publish {
-		if cfg.verbose {
-			logger.Println("enqueuing", string(jsonBytes))
-		}
 
 		put := func() error {
 			var err error
