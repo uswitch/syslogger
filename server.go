@@ -8,8 +8,8 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/cenkalti/backoff"
 	rfc3164 "github.com/jeromer/syslogparser/rfc3164"
-	"github.com/pingles/go-metrics"
-	"github.com/pingles/go-metrics/riemann"
+	"github.com/pingles/go-metrics-riemann"
+	"github.com/rcrowley/go-metrics"
 	"log"
 	"net"
 	"os"
@@ -280,7 +280,7 @@ func main() {
 
 	registerMetrics()
 
-	go riemann.Riemann(metrics.DefaultRegistry, time.Second, cfg.riemannHost)
+	go riemann.Report(metrics.DefaultRegistry, time.Second, cfg.riemannHost)
 
 	server := &server{
 		connections: []*openConnection{},
