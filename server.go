@@ -21,7 +21,7 @@ import (
 var (
 	cfg         *config
 	logger      = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lshortfile)
-	port        = flag.Int("port", 514, "port on which to listen")
+	port        = flag.Int("port", 1514, "port on which to listen")
 	verbose     = flag.Bool("verbose", false, "print all messages to stdout")
 	publish     = flag.Bool("publish", false, "publish messages to kafka")
 	topic       = flag.String("topic", "syslog", "kafka topic to publish on")
@@ -81,7 +81,6 @@ func (s *server) process(line []byte) {
 	}
 
 	if cfg.publish {
-
 		put := func() error {
 			var err error
 
@@ -106,7 +105,6 @@ func (s *server) process(line []byte) {
 			// retrying a bunch of times failed...
 			logger.Println("failed sending message.", err)
 		}
-
 	}
 }
 
@@ -156,6 +154,31 @@ func (s *server) stop() {
 	}
 }
 
+func newProducerFromZookeeper() (*sarama.Client, *sarama.Producer, error) {
+	brokers, err := LookupBrokers(cfg.zkstring)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	brokerStr := make([]string, len(brokers))
+	for i, b := range brokers {
+		brokerStr[i] = fmt.Sprintf("%s:%d", b.Host, b.Port)
+	}
+
+	logger.Println("connecting to Kafka, using brokers from ZooKeeper:", brokerStr)
+	client, err := sarama.NewClient("syslog", brokerStr, sarama.NewClientConfig())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	producer, err := sarama.NewProducer(client, sarama.NewProducerConfig())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return client, producer, nil
+}
+
 func (s *server) start() error {
 	logger.Printf("starting to listen on %d\n", cfg.port)
 
@@ -171,28 +194,11 @@ func (s *server) start() error {
 	s.listener = listener
 
 	if cfg.publish {
-		// client for kafka
-		brokers, err := LookupBrokers(cfg.zkstring)
-		if err != nil {
-			return err
-		}
-
-		brokerStr := make([]string, len(brokers))
-		for i, b := range brokers {
-			brokerStr[i] = fmt.Sprintf("%s:%d", b.Host, b.Port)
-		}
-
-		logger.Println("connecting to Kafka, using brokers from ZooKeeper:", brokerStr)
-		client, err := sarama.NewClient("syslog", brokerStr, sarama.NewClientConfig())
+		client, producer, err := newProducerFromZookeeper()
 		if err != nil {
 			return err
 		}
 		s.client = client
-
-		producer, err := sarama.NewProducer(client, sarama.NewProducerConfig())
-		if err != nil {
-			return err
-		}
 		s.producer = producer
 	}
 
