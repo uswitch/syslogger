@@ -9,7 +9,7 @@ Syslogger will help you forward syslog messages to Kafka. Messages are forwarded
 ## Design
 Syslogger tries to be a good Rsyslog citizen by offloading as much responsibility for handling failure to Rsyslog. 
 
-Reliability is achieved (as much as possible when using just TCP) by synchronously sending messages to Kafka, we put as much back-pressure onto Rsyslog as possible in the event of there being a problem or delay in forwarding messages to Kafka.
+Reliability is achieved (as much as possible when using just TCP) by synchronously sending messages to Kafka: we put as much back-pressure onto Rsyslog as possible in the event of there being a problem or delay in forwarding messages to Kafka.
 
 Syslogger starts a TCP listener, by default, on port 1514. It also attempts to connect to ZooKeeper to retrieve the connection details for the Kafka brokers. Metrics are collected using [go-metrics](https://github.com/rcrowley/go-metrics) and, because we use it a lot at uSwitch, forwarded to [Riemann](http://riemann.io).
 
