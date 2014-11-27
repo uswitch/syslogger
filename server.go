@@ -57,7 +57,7 @@ type server struct {
 	listener    net.Listener
 	connections []*openConnection
 	client      *sarama.Client
-	producer    *sarama.Producer
+	producer    *sarama.SimpleProducer
 	shutdown    chan bool
 }
 
@@ -85,7 +85,7 @@ func (s *server) process(line []byte) {
 			var err error
 
 			send := func() {
-				err = s.producer.SendMessage(cfg.topic, nil, sarama.ByteEncoder(jsonBytes))
+				err = s.producer.SendMessage(nil, sarama.ByteEncoder(jsonBytes))
 			}
 			sendTimer.Time(send)
 
@@ -154,7 +154,7 @@ func (s *server) stop() {
 	}
 }
 
-func newProducerFromZookeeper() (*sarama.Client, *sarama.Producer, error) {
+func newProducerFromZookeeper() (*sarama.Client, *sarama.SimpleProducer, error) {
 	brokers, err := LookupBrokers(cfg.zkstring)
 	if err != nil {
 		return nil, nil, err
@@ -171,7 +171,7 @@ func newProducerFromZookeeper() (*sarama.Client, *sarama.Producer, error) {
 		return nil, nil, err
 	}
 
-	producer, err := sarama.NewProducer(client, sarama.NewProducerConfig())
+	producer, err := sarama.NewSimpleProducer(client, cfg.topic, nil)
 	if err != nil {
 		return nil, nil, err
 	}
