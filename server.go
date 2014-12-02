@@ -10,6 +10,7 @@ import (
 	rfc3164 "github.com/jeromer/syslogparser/rfc3164"
 	"github.com/pingles/go-metrics-riemann"
 	"github.com/rcrowley/go-metrics"
+	"github.com/uswitch/kafkazk"
 	"log"
 	"net"
 	"os"
@@ -155,7 +156,7 @@ func (s *server) stop() {
 }
 
 func newProducerFromZookeeper() (*sarama.Client, *sarama.SimpleProducer, error) {
-	brokers, err := LookupBrokers(cfg.zkstring)
+	brokers, err := kafkazk.LookupBrokers(cfg.zkstring)
 	if err != nil {
 		return nil, nil, err
 	}
