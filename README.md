@@ -16,9 +16,15 @@ Syslogger starts a TCP listener, by default, on port 1514. It also attempts to c
 ## Building
 Syslogger uses ZooKeeper so you'll need both the ZooKeeper library and headers available on your system.
 
-    $ export GOPATH=$PWD
-    $ go get
-    $ go build
+To build on OSX (assuming you install ZooKeeper with Homebrew) you'll need:
+
+    $ export CGO_CFLAGS='-I/usr/local/include/zookeeper'
+    $ export CGO_LDFLAGS='-L/usr/local/lib'
+    
+And then...
+
+    $ export GO15VENDOREXPERIMENT=1
+    $ go install
 
 ## Configuring Rsyslog
 It's worth reading the Rsyslog documentation to make sure you configure Rsyslog according to your environment. If you just want to see stuff flowing on your development machine the following should suffice:

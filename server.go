@@ -8,7 +8,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/cenkalti/backoff"
 	rfc3164 "github.com/jeromer/syslogparser/rfc3164"
-	"github.com/pingles/go-metrics-riemann"
+	"github.com/pingles/go-metrics-stathat"
 	"github.com/rcrowley/go-metrics"
 	"github.com/uswitch/kafkazk"
 	"log"
@@ -27,7 +27,7 @@ var (
 	publish     = flag.Bool("publish", false, "publish messages to kafka")
 	topic       = flag.String("topic", "syslog", "kafka topic to publish on")
 	zkstring    = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
-	riemannHost = flag.String("riemann", "localhost:5555", "Riemann TCP host:port")
+	stathatEmail = flag.String("stathat", "", "StatHat.com email address")
 
 	connectionsCounter = metrics.NewCounter()
 	sendMeter          = metrics.NewMeter()
@@ -36,17 +36,17 @@ var (
 )
 
 type config struct {
-	port        int
-	verbose     bool
-	publish     bool
-	topic       string
-	zkstring    string
-	riemannHost string
+	port         int
+	verbose      bool
+	publish      bool
+	topic        string
+	zkstring     string
+	stathatEmail string
 }
 
 func (c *config) String() string {
-	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s, riemannHost: %s",
-		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.riemannHost)
+	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s, stathat: %s",
+		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.stathatEmail)
 }
 
 type openConnection struct {
@@ -57,8 +57,8 @@ type openConnection struct {
 type server struct {
 	listener    net.Listener
 	connections []*openConnection
-	client      *sarama.Client
-	producer    *sarama.SimpleProducer
+	client      sarama.Client
+	producer    sarama.SyncProducer
 	shutdown    chan bool
 }
 
@@ -86,7 +86,11 @@ func (s *server) process(line []byte) {
 			var err error
 
 			send := func() {
-				err = s.producer.SendMessage(nil, sarama.ByteEncoder(jsonBytes))
+				message := &sarama.ProducerMessage{
+					Topic: cfg.topic,
+					Value: sarama.ByteEncoder(jsonBytes),
+				}
+				_, _, err = s.producer.SendMessage(message)
 			}
 			sendTimer.Time(send)
 
@@ -155,7 +159,7 @@ func (s *server) stop() {
 	}
 }
 
-func newProducerFromZookeeper() (*sarama.Client, *sarama.SimpleProducer, error) {
+func newProducerFromZookeeper() (sarama.Client, sarama.SyncProducer, error) {
 	brokers, err := kafkazk.LookupBrokers(cfg.zkstring)
 	if err != nil {
 		return nil, nil, err
@@ -167,12 +171,12 @@ func newProducerFromZookeeper() (*sarama.Client, *sarama.SimpleProducer, error) 
 	}
 
 	logger.Println("connecting to Kafka, using brokers from ZooKeeper:", brokerStr)
-	client, err := sarama.NewClient("syslog", brokerStr, sarama.NewClientConfig())
+	client, err := sarama.NewClient(brokerStr, sarama.NewConfig())
 	if err != nil {
 		return nil, nil, err
 	}
 
-	producer, err := sarama.NewSimpleProducer(client, cfg.topic, nil)
+	producer, err := sarama.NewSyncProducerFromClient(client)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -254,7 +258,7 @@ func handleInterrupt(s *server) {
 				break
 			case syscall.SIGUSR1:
 				logger.Println("refreshing kafka metadata")
-				err := s.client.RefreshAllMetadata()
+				err := s.client.RefreshMetadata()
 				if err != nil {
 					logger.Println("error refreshing metadata.", err)
 				}
@@ -265,29 +269,29 @@ func handleInterrupt(s *server) {
 }
 
 func registerMetrics() {
-	metrics.Register("openConnections count", connectionsCounter)
-	metrics.Register("sentMessages", sendMeter)
-	metrics.Register("sendMessageErrors count", sendErrorsMeter)
-	metrics.Register("sendMessage", sendTimer)
+	metrics.Register("syslogger.openConnections", connectionsCounter)
+	metrics.Register("syslogger.sentMessages", sendMeter)
+	metrics.Register("syslogger.sendMessageErrors count", sendErrorsMeter)
+	metrics.Register("syslogger.sendMessage", sendTimer)
 }
 
 func main() {
 	flag.Parse()
 
 	cfg = &config{
-		port:        *port,
-		verbose:     *verbose,
-		publish:     *publish,
-		topic:       *topic,
-		zkstring:    *zkstring,
-		riemannHost: *riemannHost,
+		port:         *port,
+		verbose:      *verbose,
+		publish:      *publish,
+		topic:        *topic,
+		zkstring:     *zkstring,
+		stathatEmail: *stathatEmail,
 	}
 
 	logger.Println("starting with config:", cfg)
 
 	registerMetrics()
 
-	go riemann.Report(metrics.DefaultRegistry, time.Second, cfg.riemannHost)
+	go stathat.StatHat(metrics.DefaultRegistry, time.Second, cfg.stathatEmail)
 
 	server := &server{
 		connections: []*openConnection{},
