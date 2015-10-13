@@ -10,7 +10,6 @@ import (
 	rfc3164 "github.com/jeromer/syslogparser/rfc3164"
 	"github.com/pingles/go-metrics-stathat"
 	"github.com/rcrowley/go-metrics"
-	"github.com/uswitch/kafkazk"
 	"log"
 	"net"
 	"os"
@@ -32,6 +31,7 @@ var (
 	connectionsCounter = metrics.NewCounter()
 	sendMeter          = metrics.NewMeter()
 	sendErrorsMeter    = metrics.NewMeter()
+	sendDroppedMeter   = metrics.NewMeter()
 	sendTimer          = metrics.NewTimer()
 )
 
@@ -62,6 +62,26 @@ type server struct {
 	shutdown    chan bool
 }
 
+func (s *server) publishMessage(bytes []byte) error {
+	msg := &sarama.ProducerMessage{
+		Topic: cfg.topic,
+		Value: sarama.ByteEncoder(bytes),
+	}
+	
+	start := time.Now()
+	_, _, err := s.producer.SendMessage(msg)
+	sendTimer.UpdateSince(start)
+	
+	if err != nil {
+		logger.Println("error sending message, will retry.", err)
+		sendErrorsMeter.Mark(1)
+	} else {
+		sendMeter.Mark(1)
+	}
+	
+	return err
+}
+
 func (s *server) process(line []byte) {
 	p := rfc3164.NewParser(line)
 	if err := p.Parse(); err != nil {
@@ -83,32 +103,17 @@ func (s *server) process(line []byte) {
 
 	if cfg.publish {
 		put := func() error {
-			var err error
-
-			send := func() {
-				message := &sarama.ProducerMessage{
-					Topic: cfg.topic,
-					Value: sarama.ByteEncoder(jsonBytes),
-				}
-				_, _, err = s.producer.SendMessage(message)
-			}
-			sendTimer.Time(send)
-
-			if err != nil {
-				logger.Println("error sending message, will retry.", err)
-				sendErrorsMeter.Mark(1)
-			} else {
-				sendMeter.Mark(1)
-			}
-			return err
+			return s.publishMessage(jsonBytes)
 		}
 
 		policy := backoff.NewExponentialBackOff()
 		policy.MaxElapsedTime = time.Minute * 5
 		err := backoff.Retry(put, policy)
+		
 		if err != nil {
 			// retrying a bunch of times failed...
 			logger.Println("failed sending message.", err)
+			sendDroppedMeter.Mark(1)
 		}
 	}
 }
@@ -118,13 +123,9 @@ func (s *server) handleConnection(conn *openConnection) {
 
 	logger.Println("got connection from:", conn.connection.RemoteAddr())
 
-	incomingMessageMeter := metrics.NewMeter()
-	metrics.Register(fmt.Sprintf("%s incomingMessages", conn.connection.RemoteAddr()), incomingMessageMeter)
-
 	scanner := bufio.NewScanner(conn.connection)
 	for scanner.Scan() {
 		b := []byte(scanner.Text())
-		incomingMessageMeter.Mark(1)
 		s.process(b)
 	}
 
@@ -157,31 +158,6 @@ func (s *server) stop() {
 		s.client.Close()
 		logger.Println("finished stopping producer")
 	}
-}
-
-func newProducerFromZookeeper() (sarama.Client, sarama.SyncProducer, error) {
-	brokers, err := kafkazk.LookupBrokers(cfg.zkstring)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	brokerStr := make([]string, len(brokers))
-	for i, b := range brokers {
-		brokerStr[i] = fmt.Sprintf("%s:%d", b.Host, b.Port)
-	}
-
-	logger.Println("connecting to Kafka, using brokers from ZooKeeper:", brokerStr)
-	client, err := sarama.NewClient(brokerStr, sarama.NewConfig())
-	if err != nil {
-		return nil, nil, err
-	}
-
-	producer, err := sarama.NewSyncProducerFromClient(client)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return client, producer, nil
 }
 
 func (s *server) start() error {
@@ -269,10 +245,11 @@ func handleInterrupt(s *server) {
 }
 
 func registerMetrics() {
-	metrics.Register("syslogger.openConnections", connectionsCounter)
-	metrics.Register("syslogger.sentMessages", sendMeter)
-	metrics.Register("syslogger.sendMessageErrors count", sendErrorsMeter)
-	metrics.Register("syslogger.sendMessage", sendTimer)
+	metrics.Register("syslogger.connections", connectionsCounter)
+	metrics.Register("syslogger.messages.sent", sendMeter)
+	metrics.Register("syslogger.messages.errors", sendErrorsMeter)
+	metrics.Register("syslogger.messages.dropped", sendDroppedMeter)
+	metrics.Register("syslogger.messages.time", sendTimer)
 }
 
 func main() {
