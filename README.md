@@ -23,8 +23,9 @@ To build on OSX (assuming you install ZooKeeper with Homebrew) you'll need:
     
 And then...
 
+    $ export GOPATH=$(pwd)
     $ export GO15VENDOREXPERIMENT=1
-    $ go install
+    $ go install syslogger
 
 ## Configuring Rsyslog
 It's worth reading the Rsyslog documentation to make sure you configure Rsyslog according to your environment. If you just want to see stuff flowing on your development machine the following should suffice:
