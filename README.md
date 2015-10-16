@@ -11,7 +11,7 @@ Syslogger tries to be a good Rsyslog citizen by offloading as much responsibilit
 
 Reliability is achieved (as much as possible when using just TCP) by synchronously sending messages to Kafka: we put as much back-pressure onto Rsyslog as possible in the event of there being a problem or delay in forwarding messages to Kafka.
 
-Syslogger starts a TCP listener, by default, on port 1514. It also attempts to connect to ZooKeeper to retrieve the connection details for the Kafka brokers. Metrics are collected using [go-metrics](https://github.com/rcrowley/go-metrics) and, because we use it a lot at uSwitch, forwarded to [Riemann](http://riemann.io).
+Syslogger starts a TCP listener, by default, on port 1514. It also attempts to connect to ZooKeeper to retrieve the connection details for the Kafka brokers. Metrics are collected using [go-metrics](https://github.com/rcrowley/go-metrics).
 
 ## Building
 Syslogger uses ZooKeeper so you'll need both the ZooKeeper library and headers available on your system.
