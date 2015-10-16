@@ -8,7 +8,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/cenkalti/backoff"
 	rfc3164 "github.com/jeromer/syslogparser/rfc3164"
-	"github.com/pingles/go-metrics-stathat"
+	sh "github.com/pingles/go-metrics-stathat"
 	"github.com/rcrowley/go-metrics"
 	"log"
 	"net"
@@ -30,6 +30,7 @@ var (
 
 	connectionsCounter = metrics.NewCounter()
 	sendMeter          = metrics.NewMeter()
+	receivedMeter      = metrics.NewMeter()
 	sendErrorsMeter    = metrics.NewMeter()
 	sendDroppedMeter   = metrics.NewMeter()
 	sendTimer          = metrics.NewTimer()
@@ -67,18 +68,18 @@ func (s *server) publishMessage(bytes []byte) error {
 		Topic: cfg.topic,
 		Value: sarama.ByteEncoder(bytes),
 	}
-	
+
 	start := time.Now()
 	_, _, err := s.producer.SendMessage(msg)
 	sendTimer.UpdateSince(start)
-	
+
 	if err != nil {
 		logger.Println("error sending message, will retry.", err)
 		sendErrorsMeter.Mark(1)
 	} else {
 		sendMeter.Mark(1)
 	}
-	
+
 	return err
 }
 
@@ -88,6 +89,8 @@ func (s *server) process(line []byte) {
 		logger.Println("failed to parse:", err)
 		return
 	}
+
+	receivedMeter.Mark(1)
 
 	parts := p.Dump()
 
@@ -109,7 +112,7 @@ func (s *server) process(line []byte) {
 		policy := backoff.NewExponentialBackOff()
 		policy.MaxElapsedTime = time.Minute * 5
 		err := backoff.Retry(put, policy)
-		
+
 		if err != nil {
 			// retrying a bunch of times failed...
 			logger.Println("failed sending message.", err)
@@ -120,8 +123,11 @@ func (s *server) process(line []byte) {
 
 func (s *server) handleConnection(conn *openConnection) {
 	defer conn.connection.Close()
+	defer connectionsCounter.Dec(1)
 
+	connectionsCounter.Inc(1)
 	logger.Println("got connection from:", conn.connection.RemoteAddr())
+	logger.Println(connectionsCounter.Count(), "open connections")
 
 	scanner := bufio.NewScanner(conn.connection)
 	for scanner.Scan() {
@@ -135,7 +141,6 @@ func (s *server) handleConnection(conn *openConnection) {
 
 	logger.Println("exiting connection handler")
 	conn.done <- true
-	connectionsCounter.Dec(1)
 }
 
 func (s *server) stop() {
@@ -196,7 +201,6 @@ func (s *server) start() error {
 					connection: conn,
 					done:       make(chan bool, 1),
 				}
-				connectionsCounter.Inc(1)
 				connections <- connection
 			}
 		}
@@ -245,11 +249,12 @@ func handleInterrupt(s *server) {
 }
 
 func registerMetrics() {
-	metrics.Register("syslogger.connections", connectionsCounter)
-	metrics.Register("syslogger.messages.sent", sendMeter)
-	metrics.Register("syslogger.messages.errors", sendErrorsMeter)
-	metrics.Register("syslogger.messages.dropped", sendDroppedMeter)
-	metrics.Register("syslogger.messages.time", sendTimer)
+	metrics.Register("slogger.connections", connectionsCounter)
+	metrics.Register("slogger.messages.sent", sendMeter)
+	metrics.Register("slogger.messages.errors", sendErrorsMeter)
+	metrics.Register("slogger.messages.dropped", sendDroppedMeter)
+	metrics.Register("slogger.messages.time", sendTimer)
+	metrics.Register("slogger.messages.received", receivedMeter)
 }
 
 func main() {
@@ -268,7 +273,13 @@ func main() {
 
 	registerMetrics()
 
-	go stathat.StatHat(metrics.DefaultRegistry, time.Second, cfg.stathatEmail)
+	if cfg.stathatEmail != "" {
+		logger.Println("sending metrics to stathat account", cfg.stathatEmail)
+		go sh.StatHat(metrics.DefaultRegistry, time.Second * 10, cfg.stathatEmail)
+	} else {
+		logger.Println("metrics not being published")
+		go metrics.Log(metrics.DefaultRegistry, time.Second * 10, log.New(os.Stderr, "metrics: ", log.Lmicroseconds))
+	}
 
 	server := &server{
 		connections: []*openConnection{},
