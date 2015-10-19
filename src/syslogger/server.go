@@ -27,6 +27,7 @@ var (
 	topic       = flag.String("topic", "syslog", "kafka topic to publish on")
 	zkstring    = flag.String("zkstring", "localhost:2181", "ZooKeeper broker connection string")
 	stathatEmail = flag.String("stathat", "", "StatHat.com email address")
+	readTimeout  = flag.Duration("readTimeout", 1 * time.Minute, "timeout for reading messages from open syslog connections")
 
 	connectionsCounter = metrics.NewCounter()
 	sendMeter          = metrics.NewMeter()
@@ -43,11 +44,12 @@ type config struct {
 	topic        string
 	zkstring     string
 	stathatEmail string
+	readTimeout  time.Duration
 }
 
 func (c *config) String() string {
-	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s, stathat: %s",
-		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.stathatEmail)
+	return fmt.Sprintf("port: %d, verbose: %t, publish: %t, topic: %s, zkstring: %s, stathat: %s, readTimeout: %s",
+		c.port, c.verbose, c.publish, c.topic, c.zkstring, c.stathatEmail, c.readTimeout.String())
 }
 
 type openConnection struct {
@@ -61,6 +63,7 @@ type server struct {
 	client      sarama.Client
 	producer    sarama.SyncProducer
 	shutdown    chan bool
+	readTimeout time.Duration
 }
 
 func (s *server) publishMessage(bytes []byte) error {
@@ -83,7 +86,7 @@ func (s *server) publishMessage(bytes []byte) error {
 	return err
 }
 
-func (s *server) process(line []byte) {
+func (s *server) processLine(line []byte) {
 	p := rfc3164.NewParser(line)
 	if err := p.Parse(); err != nil {
 		logger.Println("failed to parse:", err)
@@ -123,16 +126,19 @@ func (s *server) process(line []byte) {
 
 func (s *server) handleConnection(conn *openConnection) {
 	defer conn.connection.Close()
-	defer connectionsCounter.Dec(1)
 
 	connectionsCounter.Inc(1)
+	defer connectionsCounter.Dec(1)
+	
 	logger.Println("got connection from:", conn.connection.RemoteAddr())
 	logger.Println(connectionsCounter.Count(), "open connections")
+
+	conn.connection.SetReadDeadline(time.Now().Add(s.readTimeout))
 
 	scanner := bufio.NewScanner(conn.connection)
 	for scanner.Scan() {
 		b := []byte(scanner.Text())
-		s.process(b)
+		s.processLine(b)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -267,6 +273,7 @@ func main() {
 		topic:        *topic,
 		zkstring:     *zkstring,
 		stathatEmail: *stathatEmail,
+		readTimeout:  *readTimeout,
 	}
 
 	logger.Println("starting with config:", cfg)
@@ -284,6 +291,7 @@ func main() {
 	server := &server{
 		connections: []*openConnection{},
 		shutdown:    make(chan bool),
+		readTimeout: cfg.readTimeout,
 	}
 
 	handleInterrupt(server)
